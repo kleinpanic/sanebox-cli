@@ -42,50 +42,68 @@ def auth():
 
 
 @auth.command()
-@click.option("--oauth", is_flag=True, help="Use OAuth authentication")
-@click.option("--session", is_flag=True, help="Use session cookie authentication")
-@click.option("--client-id", help="OAuth client ID (required for OAuth)")
-def login(oauth: bool, session: bool, client_id: str):
-    """Login to SaneBox."""
+@click.option("--oauth", is_flag=True, help="Use OAuth (requires client_id from SaneBox)")
+@click.option("--session", is_flag=True, help="Paste session cookie from browser DevTools")
+@click.option("--client-id", help="OAuth client ID")
+@click.option("--email", "-e", help="Email address for direct signin")
+@click.option("--password", "-p", default=None, help="Password (prompted if omitted)")
+def login(oauth: bool, session: bool, client_id: str, email: str, password: str):
+    """Login to SaneBox.
+
+    Three modes:
+
+      sanebox auth login                         # interactive menu
+
+      sanebox auth login -e you@example.com      # direct signin (recommended)
+
+      sanebox auth login --session               # paste cookie from DevTools
+
+      sanebox auth login --oauth                 # OAuth flow (needs client_id)
+    """
     auth_mgr = AuthManager()
 
     if oauth:
         if not client_id:
-            client_id = click.prompt("Enter your SaneBox OAuth client ID")
-        client_secret = click.prompt("Enter client secret (leave empty if none)", default="")
+            client_id = click.prompt("SaneBox OAuth client ID")
+        client_secret = click.prompt("Client secret (blank if none)", default="")
         auth_mgr.login_oauth(client_id, client_secret)
+
+    elif email:
+        pw = password or click.prompt("Password", hide_input=True)
+        auth_mgr.login_signin(email, pw)
+
     elif session:
-        console.print("""
-[bold]To get your session cookie:[/bold]
-1. Open https://www.sanebox.com in your browser
-2. Login to your account
-3. Open browser DevTools (F12) → Application/Storage → Cookies
-4. Find the '_session' cookie and copy its value
-5. Paste it below in format: _session=YOUR_VALUE
-""")
-        session_cookie = click.prompt("Paste your session cookie")
-        auth_mgr.login_session(session_cookie)
-    else:
-        # Default: ask which method
-        method = click.prompt(
-            "Choose authentication method",
-            type=click.Choice(["oauth", "session"]),
-            default="session",
+        console.print(
+            "\n[bold]Get your session cookie:[/bold]\n"
+            "1. Open https://www.sanebox.com and log in\n"
+            "2. DevTools (F12) → Application → Cookies → www.sanebox.com\n"
+            "3. Copy the full cookie string\n"
         )
-        if method == "oauth":
-            client_id = click.prompt("Enter your SaneBox OAuth client ID")
-            client_secret = click.prompt("Enter client secret (leave empty if none)", default="")
-            auth_mgr.login_oauth(client_id, client_secret)
+        session_cookie = click.prompt("Paste cookie")
+        auth_mgr.login_session(session_cookie)
+
+    else:
+        method = click.prompt(
+            "Auth method",
+            type=click.Choice(["signin", "session", "oauth"]),
+            default="signin",
+        )
+        if method == "signin":
+            em = click.prompt("Email")
+            pw = click.prompt("Password", hide_input=True)
+            auth_mgr.login_signin(em, pw)
+        elif method == "oauth":
+            cid = click.prompt("OAuth client ID")
+            cs = click.prompt("Client secret (blank if none)", default="")
+            auth_mgr.login_oauth(cid, cs)
         else:
-            console.print("""
-[bold]To get your session cookie:[/bold]
-1. Open https://www.sanebox.com in your browser
-2. Login to your account
-3. Open browser DevTools (F12) → Application/Storage → Cookies
-4. Find the '_session' cookie and copy its value
-5. Paste it below in format: _session=YOUR_VALUE
-""")
-            session_cookie = click.prompt("Paste your session cookie")
+            console.print(
+                "\n[bold]Get your session cookie:[/bold]\n"
+                "1. Open https://www.sanebox.com and log in\n"
+                "2. DevTools (F12) → Application → Cookies\n"
+                "3. Copy the full cookie string\n"
+            )
+            session_cookie = click.prompt("Paste cookie")
             auth_mgr.login_session(session_cookie)
 
 

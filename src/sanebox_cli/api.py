@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import requests
 from rich.console import Console
 
-from sanebox_cli.auth import AuthManager, ALLOWED_ACCOUNTS
+from sanebox_cli.auth import AuthManager, get_allowed_accounts
 
 console = Console()
 
@@ -56,12 +56,14 @@ class SaneBoxAPI:
         if not self.auth.is_authenticated():
             raise ValueError("Not authenticated. Run 'sanebox auth login'")
 
-        # Enforce account allowlist
+        # Enforce account allowlist (if configured — empty list = no restriction)
         active = getattr(self.auth.credentials, "active_account", None)
-        if active and active not in ALLOWED_ACCOUNTS:
+        allowed = get_allowed_accounts()
+        if active and allowed and active not in allowed:
             raise ValueError(
-                f"Account '{active}' is not in the allowed list. "
-                "Run 'sanebox accounts use <email>' to select an allowed account."
+                f"Account '{active}' is not in your allowed accounts list. "
+                "Set SANEBOX_ALLOWED_ACCOUNTS env var or edit "
+                "~/.config/sanebox-cli/config.json."
             )
 
         headers = self.auth.get_auth_headers()
@@ -224,7 +226,16 @@ class SaneBoxAPI:
             result = self._request("GET", "/accounts")
             # Filter to only our allowed accounts
             all_accounts = result.get("accounts", [])
-            return [a for a in all_accounts if a in ALLOWED_ACCOUNTS]
+            allowed = get_allowed_accounts()
+            return [a for a in all_accounts if not allowed or a in allowed]
         except Exception as e:
             console.print(f"[red]Failed to get accounts: {e}[/red]")
             return []
+
+    # -------------------------------------------------------------------------
+    # Utility
+    # -------------------------------------------------------------------------
+
+    def allowed_accounts(self) -> list[str]:
+        """Return the configured allowed accounts list."""
+        return get_allowed_accounts()

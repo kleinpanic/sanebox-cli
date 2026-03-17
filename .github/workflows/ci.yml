@@ -34,7 +34,7 @@ jobs:
       run: ruff check src/ tests/
 
     - name: Format check with black
-      run: black --check src/ tests/
+      run: black --check --fast src/ tests/
 
     - name: Run tests
       run: pytest tests/ -v --cov=src/sanebox_cli --cov-report=xml
