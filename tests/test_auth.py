@@ -116,7 +116,7 @@ def test_login_signin_success(tmp_path, monkeypatch):
     auth_module.CREDENTIALS_FILE = tmp_path / "credentials.json"
 
     mock_session = MagicMock()
-    mock_get_resp = Mock(status_code=200, text="<html></html>", url=auth_module.SANEBOX_LOGIN_URL)
+    mock_get_resp = Mock(status_code=200, text="<html></html>", url=auth_module.SANEBOX_LOGIN_PAGE)
     mock_post_resp = Mock(status_code=200, url="https://www.sanebox.com/dashboard", text="")
     mock_session.get.return_value = mock_get_resp
     mock_session.post.return_value = mock_post_resp

@@ -24,7 +24,8 @@ console = Console()
 
 # SaneBox endpoints
 SANEBOX_BASE = "https://www.sanebox.com"
-SANEBOX_LOGIN_URL = f"{SANEBOX_BASE}/login"
+SANEBOX_LOGIN_PAGE = f"{SANEBOX_BASE}/login"  # GET: fetch CSRF + form
+SANEBOX_LOGIN_POST = f"{SANEBOX_BASE}/sessions"  # POST: submit credentials
 SANEBOX_OAUTH_AUTHORIZE = f"{SANEBOX_BASE}/api/oauth/authorize"
 SANEBOX_OAUTH_TOKEN = f"{SANEBOX_BASE}/api/oauth/token"
 
@@ -133,10 +134,11 @@ class AuthManager:
 
     def login_signin(self, email: str, password: str) -> bool:
         """
-        Authenticate by POSTing credentials to SaneBox login form,
+        Authenticate by POSTing credentials to SaneBox /sessions endpoint,
         then extracting the session cookie from the response.
 
-        This is the practical fallback when no OAuth client_id is available.
+        SaneBox uses Rails: GET /login for CSRF token, POST /sessions with
+        fields: email, password, authenticity_token, utf8.
         """
         console.print("[cyan]Signing in to SaneBox...[/cyan]")
 
@@ -148,21 +150,20 @@ class AuthManager:
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/122.0.0.0 Safari/537.36"
                 ),
-                "Accept": "application/json, text/html, */*",
-                "Referer": SANEBOX_LOGIN_URL,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": SANEBOX_LOGIN_PAGE,
                 "Origin": SANEBOX_BASE,
             }
         )
 
-        # Step 1: GET login page to pick up any CSRF token
+        # Step 1: GET /login — pick up Rails CSRF token (authenticity_token)
         try:
-            get_resp = session.get(SANEBOX_LOGIN_URL, timeout=15)
+            get_resp = session.get(SANEBOX_LOGIN_PAGE, timeout=15)
             get_resp.raise_for_status()
         except requests.RequestException as exc:
             console.print(f"[red]Failed to reach SaneBox login page: {exc}[/red]")
             return False
 
-        # Extract CSRF token if present (common Rails pattern)
         csrf_token = None
         try:
             from html.parser import HTMLParser
@@ -172,11 +173,7 @@ class AuthManager:
 
                 def handle_starttag(self, tag, attrs):
                     attrs_dict = dict(attrs)
-                    if tag == "input" and attrs_dict.get("name") in (
-                        "authenticity_token",
-                        "_token",
-                        "csrf_token",
-                    ):
+                    if tag == "input" and attrs_dict.get("name") == "authenticity_token":
                         self.token = attrs_dict.get("value")
                     elif tag == "meta" and attrs_dict.get("name") == "csrf-token":
                         self.token = attrs_dict.get("content")
@@ -187,14 +184,21 @@ class AuthManager:
         except Exception:
             pass
 
-        # Step 2: POST login form
-        payload: dict = {"email": email, "password": password}
+        if not csrf_token:
+            console.print("[yellow]Warning: no CSRF token found — login may fail[/yellow]")
+
+        # Step 2: POST to /sessions with email + password + CSRF
+        payload: dict = {
+            "email": email,
+            "password": password,
+            "utf8": "✓",
+        }
         if csrf_token:
             payload["authenticity_token"] = csrf_token
 
         try:
             post_resp = session.post(
-                SANEBOX_LOGIN_URL,
+                SANEBOX_LOGIN_POST,
                 data=payload,
                 allow_redirects=True,
                 timeout=15,
@@ -203,7 +207,16 @@ class AuthManager:
             console.print(f"[red]Login request failed: {exc}[/red]")
             return False
 
-        # Step 3: Extract session cookie
+        # Step 3: Detect bad credentials — Rails redirects back to /login on failure
+        final_url = post_resp.url
+        body_lower = post_resp.text.lower()
+        if "/login" in final_url or (
+            "invalid" in body_lower or "incorrect" in body_lower or "didn't recognize" in body_lower
+        ):
+            console.print("[red]Invalid email or password.[/red]")
+            return False
+
+        # Step 4: Extract session cookie
         cookie_names = ["_sanebox_session", "_session", "session", "remember_user_token"]
         session_cookie_str = None
 
@@ -213,24 +226,17 @@ class AuthManager:
                 session_cookie_str = f"{name}={val}"
                 break
 
-        # Fallback: grab all cookies as a header string
+        # Fallback: grab all cookies as a single header string
         if not session_cookie_str and session.cookies:
             session_cookie_str = "; ".join(f"{c.name}={c.value}" for c in session.cookies)
 
         if not session_cookie_str:
             console.print(
                 "[red]Login may have failed — no session cookie returned.[/red]\n"
-                "[dim]Check your email/password and try again, or use "
+                "[dim]Check your email/password, or use "
                 "'sanebox auth login --session' to paste a cookie manually.[/dim]"
             )
             return False
-
-        # Check we landed somewhere authenticated (not back on login page)
-        if SANEBOX_LOGIN_URL in post_resp.url and post_resp.status_code == 200:
-            # Likely redirected back to login = bad credentials
-            if "invalid" in post_resp.text.lower() or "incorrect" in post_resp.text.lower():
-                console.print("[red]Invalid email or password.[/red]")
-                return False
 
         self.credentials = SaneBoxCredentials(
             auth_method="signin",
@@ -241,10 +247,6 @@ class AuthManager:
         self._save_credentials()
         console.print(f"[green]✓ Signed in as {email}[/green]")
         return True
-
-    # ------------------------------------------------------------------
-    # Session cookie (manual paste from browser DevTools)
-    # ------------------------------------------------------------------
 
     def login_session(self, session_cookie: str) -> bool:
         """Login using session cookie extracted from browser."""
