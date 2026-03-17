@@ -122,7 +122,9 @@ def test_login_signin_success(tmp_path, monkeypatch):
     mock_session.post.return_value = mock_post_resp
     mock_cookies = MagicMock()
     mock_cookies.get = Mock(return_value="sess_abc")
-    mock_cookies.__iter__ = Mock(return_value=iter([Mock(name="_sanebox_session", value="sess_abc")]))
+    mock_cookies.__iter__ = Mock(
+        return_value=iter([Mock(name="_sanebox_session", value="sess_abc")])
+    )
     mock_cookies.__bool__ = Mock(return_value=True)
     mock_session.cookies = mock_cookies
 

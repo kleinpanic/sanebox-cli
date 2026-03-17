@@ -18,7 +18,7 @@ pip install sanebox-cli
 sanebox auth login
 
 # Set active account (if you have multiple)
-sanebox accounts use kleinpanic@gmail.com
+sanebox accounts use you@example.com
 
 # Train a sender
 sanebox train newsletter@spam.com --to SaneLater

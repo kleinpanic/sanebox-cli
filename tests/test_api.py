@@ -30,7 +30,7 @@ def _make_api_with_mock_auth():
     mock_auth.credentials = SaneBoxCredentials(
         auth_method="session",
         session_cookie="test-cookie",
-        active_account="kleinpanic@gmail.com",
+        active_account="you@example.com",
     )
     api = SaneBoxAPI(auth_manager=mock_auth)
     return api
